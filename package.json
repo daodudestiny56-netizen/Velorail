@@ -1,0 +1,27 @@
+{
+  "name": "velorail",
+  "version": "2.0.0",
+  "description": "VeloRail: Intent-driven financial gateway Telegram bot wrapper.",
+  "main": "dist/server.js",
+  "scripts": {
+    "dev": "ts-node src/server.ts",
+    "build": "tsc",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@google/genai": "^0.2.0",
+    "axios": "^1.6.8",
+    "dotenv": "^16.4.5",
+    "form-data": "^4.0.0",
+    "grammy": "^1.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  }
+}
