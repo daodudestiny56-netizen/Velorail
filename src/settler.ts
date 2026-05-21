@@ -73,8 +73,22 @@ export async function settle(intent: TransactionIntent): Promise<{
   // Build ISO 20022 payload block
   const iso20022 = buildISO20022(intent, txRef);
 
-  // Fee calculation (Traditional vs VeloRail)
-  let feeTable = "";
+  const actionName = intent.action === "TRANSFER" ? "Transfer" :
+                     intent.action === "BALANCE_CHECK" ? "Balance Check" :
+                     intent.action === "CONVERSION" ? "Conversion" : "Transaction";
+
+  let receipt = `✅ *VeloRail — ${actionName} Confirmed*\n\n`;
+  receipt += `📋 *Ref:* ${txRef}\n`;
+  if (intent.amount !== null) {
+    receipt += `💸 *Amount:* ${intent.amount} ${intent.currency || "USD"}\n`;
+  }
+  if (intent.recipient !== null) {
+    receipt += `👤 *Recipient:* ${intent.recipient}\n`;
+  }
+  if (intent.reference !== null) {
+    receipt += `🏷 *Memo:* ${intent.reference}\n`;
+  }
+
   if (intent.amount !== null) {
     const amount = intent.amount;
     const tradFee = 35.0 + amount * 0.005;
@@ -82,39 +96,16 @@ export async function settle(intent: TransactionIntent): Promise<{
     const savings = tradFee - veloFee;
     const savingsPct = (savings / tradFee) * 100;
 
-    feeTable = [
-      `| Provider | Flat Fee | Variable Fee | Total Fee |`,
-      `| :--- | :--- | :--- | :--- |`,
-      `| Traditional Bank | $35.00 | 0.50% ($${(amount * 0.005).toFixed(2)}) | $${tradFee.toFixed(2)} |`,
-      `| VeloRail Gateway | $0.50 | 0.10% ($${(amount * 0.001).toFixed(2)}) | $${veloFee.toFixed(2)} |`,
-      `| Net Savings | | | $${savings.toFixed(2)} (${savingsPct.toFixed(1)}%) |`,
-    ].join("\n");
+    receipt += `\n─────────────────────\n`;
+    receipt += `📊 *Fee Analysis*\n`;
+    receipt += `  Traditional wire:  ~$${tradFee.toFixed(2)}\n`;
+    receipt += `  VeloRail:           $${veloFee.toFixed(2)}\n`;
+    receipt += `  💰 *Saved:*          $${savings.toFixed(2)} (${savingsPct.toFixed(1)}% less)\n`;
+    receipt += `─────────────────────\n`;
   }
 
-  // Header definition with zero unicode emojis to comply with strict instructions
-  const header = `TRANSACTION SETTLED: ${intent.action}`;
-
-  let receipt = `${header}\n`;
-  receipt += `===\n`;
-  receipt += `Reference: ${txRef}\n`;
-
-  if (intent.amount !== null) {
-    receipt += `Amount: ${intent.amount} ${intent.currency || "USD"}\n`;
-  }
-  if (intent.recipient !== null) {
-    receipt += `Recipient: ${intent.recipient}\n`;
-  }
-  if (intent.reference !== null) {
-    receipt += `Memo: ${intent.reference}\n`;
-  }
-  receipt += `Raw Input: ${intent.raw_input}\n`;
-
-  if (feeTable) {
-    receipt += `\nFee Comparison:\n${feeTable}\n`;
-  }
-
-  receipt += `\nTimestamp: ${new Date().toISOString()}\n`;
-  receipt += `Schema: ISO 20022 (pain.001.001.09)`;
+  receipt += `\n🕐 ${new Date().toUTCString()}\n`;
+  receipt += `🔒 ISO 20022 pain.001.001.09`;
 
   return {
     receipt,

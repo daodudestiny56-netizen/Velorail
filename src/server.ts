@@ -24,11 +24,10 @@ if (!process.env.OPENAI_API_KEY && !process.env.MOCK_TRANSCRIPTION_TEXT) {
 // Bot initialization
 const bot = new Bot(token);
 
-// Helper to build the Markdown transaction preview without any unicode emojis
+// Helper to build the Markdown transaction preview matching the setup guide format
 function buildPreview(intent: TransactionIntent): string {
-  let text = "Transaction Preview\n";
-  text += "===\n";
-  text += `Action: ${intent.action}\n`;
+  let text = "💸 *Transaction Preview*\n\n";
+  text += `Type: ${intent.action}\n`;
   if (intent.amount !== null) {
     text += `Amount: ${intent.amount} ${intent.currency || "USD"}\n`;
   }
@@ -38,7 +37,7 @@ function buildPreview(intent: TransactionIntent): string {
   if (intent.reference !== null) {
     text += `Memo: ${intent.reference}\n`;
   }
-  text += `Raw Input: ${intent.raw_input}\n\n`;
+  text += `\nParsed from: "${intent.raw_input}"\n\n`;
   text += "Confirm this transaction?";
   return text;
 }
@@ -63,8 +62,8 @@ async function runPipeline(ctx: any, rawText: string) {
 
   const previewText = buildPreview(intent);
   const keyboard = new InlineKeyboard()
-    .text("Confirm", "confirm_payment")
-    .text("Cancel", "cancel_payment");
+    .text("✅ Confirm", "confirm_payment")
+    .text("❌ Cancel", "cancel_payment");
 
   await ctx.reply(previewText, {
     parse_mode: "Markdown",
@@ -189,7 +188,7 @@ bot.callbackQuery("cancel_payment", async (ctx) => {
       session.clear(userId);
     }
     await ctx.answerCallbackQuery("Cancelled.");
-    await ctx.editMessageText("Transaction cancelled. No funds were moved.");
+    await ctx.editMessageText("Transaction cancelled.");
   } catch (error: any) {
     console.error(error);
   }
@@ -200,9 +199,11 @@ bot.catch((err) => {
   console.error(`Error in update ${err.ctx.update.update_id}:`, err.error);
 });
 
+console.log("[VeloRail] Starting...");
+
 // Bot Launch
 bot.start({
   onStart: (info) => {
-    console.log("@" + info.username);
+    console.log(`[VeloRail] ✅ Running as @${info.username}`);
   },
 });
