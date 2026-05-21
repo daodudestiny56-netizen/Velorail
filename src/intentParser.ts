@@ -54,7 +54,26 @@ export async function parseIntent(rawText: string): Promise<TransactionIntent> {
     contents: rawText,
     config: {
       temperature: 0.1,
-      systemInstruction: "You are a deterministic financial intent parser. Extract structured payment parameters. Return null for any field you cannot confidently extract. Never hallucinate values.",
+      systemInstruction: "You are a deterministic financial intent parser. Extract structured payment parameters from raw user inputs.\n" +
+        "The user input can be in English, Nigerian Pidgin, or Yoruba.\n\n" +
+        "Guidelines:\n" +
+        "1. Action type must be one of:\n" +
+        "   - 'TRANSFER': For transfers, payments, sending money (e.g., 'send', 'transfer', 'pay', 'fi ... ranṣẹ', 'bami fi', 'give').\n" +
+        "   - 'BALANCE_CHECK': For checking balance (e.g., 'check balance', 'wo balance mi', 'how much I get', 'what is my balance').\n" +
+        "   - 'UNKNOWN': If not recognizable.\n" +
+        "2. Amount: Extract the numeric value. Convert written number words to numbers (e.g., 'five thousand' -> 5000, '500' -> 500).\n" +
+        "3. Currency: Extract the currency. Standardize to codes:\n" +
+        "   - 'naira', '₦', 'NGN' -> 'NGN'\n" +
+        "   - 'STT', 'somnia' -> 'STT'\n" +
+        "   - 'USD', 'dollars', '$' -> 'USD'\n" +
+        "   - Default to 'STT' if not mentioned.\n" +
+        "4. Recipient: Extract the name (e.g. 'Chidi', 'Tunde', 'Alice') or hex EVM address (e.g. '0x...').\n" +
+        "5. Reference: Extract the payment reason, note or memo context (e.g. 'generator fuel', 'ewa', 'food', 'rent'). Keep local terms like 'ewa' as is.\n\n" +
+        "Examples:\n" +
+        "- Input: 'Send five thousand naira to Chidi for the generator fuel'\n" +
+        "  Output: { \"action\": \"TRANSFER\", \"amount\": 5000, \"currency\": \"NGN\", \"recipient\": \"Chidi\", \"reference\": \"generator fuel\" }\n" +
+        "- Input: 'fi 500 naira ranṣẹ si Tunde fun ewa'\n" +
+        "  Output: { \"action\": \"TRANSFER\", \"amount\": 500, \"currency\": \"NGN\", \"recipient\": \"Tunde\", \"reference\": \"ewa\" }",
       responseMimeType: "application/json",
       responseSchema: INTENT_SCHEMA,
     },

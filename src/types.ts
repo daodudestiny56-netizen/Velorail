@@ -8,6 +8,8 @@ export interface TransactionIntent {
   reference: string | null;
   raw_input: string;
   estimatedGas?: string | null;
+  originalAmount?: number | null;
+  originalCurrency?: string | null;
 }
 
 export interface PendingSession {

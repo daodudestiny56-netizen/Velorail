@@ -21,6 +21,39 @@ export function isValidAddress(address: string): boolean {
   return ethers.isAddress(address);
 }
 
+// Demo address book mapping common names to test EVM addresses for demo scenarios
+const ADDRESS_BOOK: Record<string, string> = {
+  chidi: process.env.ADDRESS_CHIDI || "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
+  tunde: process.env.ADDRESS_TUNDE || "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC",
+  alice: process.env.ADDRESS_ALICE || "0x90F79bf6EB2c4f870365E785982E1f101E93b906",
+  bob:   process.env.ADDRESS_BOB   || "0x15d34AAf54a67C6430091F041E1B50e6A900e5a5",
+};
+
+/**
+ * Resolves a recipient name or address to a valid 0x hex address.
+ * Returns null if the recipient is not a valid address and cannot be found in the address book.
+ */
+export function resolveRecipientAddress(recipient: string): string | null {
+  if (isValidAddress(recipient)) {
+    return recipient;
+  }
+  const normalized = recipient.toLowerCase().trim();
+  return ADDRESS_BOOK[normalized] || null;
+}
+
+/**
+ * Reverse lookup name from address.
+ */
+export function getNameFromAddress(address: string): string | null {
+  const normAddr = address.toLowerCase().trim();
+  for (const [name, addr] of Object.entries(ADDRESS_BOOK)) {
+    if (addr.toLowerCase().trim() === normAddr) {
+      return name.charAt(0).toUpperCase() + name.slice(1);
+    }
+  }
+  return null;
+}
+
 /**
  * Returns the public address of the configured bot wallet.
  */

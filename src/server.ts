@@ -7,7 +7,7 @@ import { parseIntent } from "./intentParser";
 import { transcribeVoice } from "./transcribe";
 import { settle } from "./settler";
 import { TransactionIntent } from "./types";
-import { isValidAddress, getWalletBalance, getBotWalletAddress, estimateTransferGas } from "./evm";
+import { isValidAddress, resolveRecipientAddress, getNameFromAddress, getWalletBalance, getBotWalletAddress, estimateTransferGas } from "./evm";
 
 // Startup validation
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,11 +29,17 @@ const bot = new Bot(token);
 function buildPreview(intent: TransactionIntent): string {
   let text = "💸 *Transaction Preview*\n\n";
   text += `Type: ${intent.action}\n`;
-  if (intent.amount !== null) {
+  if (intent.originalAmount !== undefined && intent.originalAmount !== null) {
+    const origCurrency = intent.originalCurrency || "NGN";
+    text += `Original Amount: ${intent.originalAmount} ${origCurrency}\n`;
+    text += `Converted Amount: ${intent.amount} STT\n`;
+  } else if (intent.amount !== null) {
     text += `Amount: ${intent.amount} ${intent.currency || "STT"}\n`;
   }
   if (intent.recipient !== null) {
-    text += `Recipient: \`${intent.recipient}\`\n`;
+    const name = getNameFromAddress(intent.recipient);
+    const recipientDisplay = name ? `${name} (\`${intent.recipient}\`)` : `\`${intent.recipient}\``;
+    text += `Recipient: ${recipientDisplay}\n`;
   }
   if (intent.reference !== null) {
     text += `Memo: ${intent.reference}\n`;
@@ -44,6 +50,30 @@ function buildPreview(intent: TransactionIntent): string {
   text += `\nParsed from: "${intent.raw_input}"\n\n`;
   text += "Confirm this transaction?";
   return text;
+}
+
+// Demo exchange rates:
+// 1 STT = 1.00 USD
+// 1 USD = 1500 NGN (so 1 STT = 1500 NGN)
+function convertToSTT(amount: number, currency: string): { convertedAmount: number; rateUsed: number } {
+  const normCurrency = currency.toUpperCase().trim();
+  if (normCurrency === "NGN") {
+    return {
+      convertedAmount: Number((amount / 1500).toFixed(6)),
+      rateUsed: 1500,
+    };
+  }
+  if (normCurrency === "USD") {
+    return {
+      convertedAmount: Number(amount.toFixed(6)),
+      rateUsed: 1.0,
+    };
+  }
+  // Default/STT
+  return {
+    convertedAmount: amount,
+    rateUsed: 1.0,
+  };
 }
 
 // Core pipeline executor
@@ -63,9 +93,9 @@ async function runPipeline(ctx: any, rawText: string) {
   }
 
   if (intent.action === "BALANCE_CHECK") {
-    const target = intent.recipient && isValidAddress(intent.recipient) ? intent.recipient : undefined;
-    const balance = await getWalletBalance(target);
-    const addr = target || getBotWalletAddress();
+    const targetAddress = intent.recipient ? resolveRecipientAddress(intent.recipient) : undefined;
+    const balance = await getWalletBalance(targetAddress || undefined);
+    const addr = targetAddress || getBotWalletAddress();
     await ctx.reply(`📊 *Wallet Balance*\n\nAddress: \`${addr}\`\nBalance: *${balance} STT*`, {
       parse_mode: "Markdown"
     });
@@ -76,12 +106,26 @@ async function runPipeline(ctx: any, rawText: string) {
     if (!intent.recipient) {
       throw new Error("Missing recipient address for transfer.");
     }
-    if (!isValidAddress(intent.recipient)) {
-      throw new Error(`Could not find a valid wallet address for '${intent.recipient}'. Please provide a full 0x address.`);
+    
+    // Resolve name to EVM address (or check if it is a valid hex address)
+    const resolvedAddress = resolveRecipientAddress(intent.recipient);
+    if (!resolvedAddress) {
+      throw new Error(`Could not find a valid wallet address for '${intent.recipient}'. Please provide a valid registered name (Chidi, Tunde, Alice, Bob) or a full 0x EVM address.`);
     }
+
     if (intent.amount === null || intent.amount <= 0) {
       throw new Error("Missing or invalid amount for transfer. Please specify a numeric amount.");
     }
+
+    // Capture original currency/amount for the preview and fee comparison
+    intent.originalAmount = intent.amount;
+    intent.originalCurrency = intent.currency || "STT";
+
+    // Perform conversion to STT if needed
+    const { convertedAmount } = convertToSTT(intent.amount, intent.currency || "STT");
+    intent.amount = convertedAmount;
+    intent.currency = "STT";
+    intent.recipient = resolvedAddress; // Use the resolved 0x address for on-chain
 
     // Dry-run gas estimation to display gas fee and catch revert/insufficient fund issues upfront
     await ctx.replyWithChatAction("typing");

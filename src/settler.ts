@@ -1,5 +1,5 @@
 import { TransactionIntent } from "./types";
-import { sendTransaction } from "./evm";
+import { sendTransaction, getNameFromAddress } from "./evm";
 
 function buildISO20022(intent: TransactionIntent, txHash: string) {
   const timestamp = new Date().toISOString();
@@ -84,27 +84,67 @@ export async function settle(intent: TransactionIntent): Promise<{
   const iso20022 = buildISO20022(intent, txHash);
 
   // Fee calculation (Traditional vs VeloRail Actual Gas Fee)
-  const tradFee = 35.0 + amount * 0.005;
-  const veloFee = parseFloat(gasCostEther);
-  const savings = tradFee - veloFee;
-  const savingsPct = (savings / tradFee) * 100;
+  const amountInSTT = amount;
+  const sourceCurrency = intent.originalCurrency || "STT";
+  const sourceAmount = intent.originalAmount !== undefined && intent.originalAmount !== null ? intent.originalAmount : amount;
+  
+  // Traditional wire / cross-border transfer fee is approx $35.0 base + 0.5% in USD equivalent
+  // VeloRail is just the gas cost on Somnia Testnet (1 STT = $1.00 USD mock)
+  const amountInUSD = amountInSTT; 
+  const tradFeeUSD = 35.0 + amountInUSD * 0.005;
+  const veloFeeUSD = parseFloat(gasCostEther);
+  const savingsUSD = tradFeeUSD - veloFeeUSD;
+  const savingsPct = (savingsUSD / tradFeeUSD) * 100;
+
+  // Format fees in source currency (e.g. Naira NGN)
+  let tradFeeSourceStr = "";
+  let veloFeeSourceStr = "";
+  let savingsSourceStr = "";
+
+  if (sourceCurrency === "NGN") {
+    // 1 STT = 1 USD = 1500 NGN
+    const tradFeeNGN = tradFeeUSD * 1500;
+    const veloFeeNGN = veloFeeUSD * 1500;
+    const savingsNGN = savingsUSD * 1500;
+
+    tradFeeSourceStr = `₦${tradFeeNGN.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    veloFeeSourceStr = `₦${veloFeeNGN.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })} (${gasCostEther} STT)`;
+    savingsSourceStr = `₦${savingsNGN.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} (${savingsPct.toFixed(3)}% saved)`;
+  } else if (sourceCurrency === "USD") {
+    tradFeeSourceStr = `$${tradFeeUSD.toFixed(2)}`;
+    veloFeeSourceStr = `$${veloFeeUSD.toFixed(6)} STT`;
+    savingsSourceStr = `$${savingsUSD.toFixed(2)} (${savingsPct.toFixed(3)}% saved)`;
+  } else {
+    tradFeeSourceStr = `${tradFeeUSD.toFixed(2)} USD`;
+    veloFeeSourceStr = `${veloFeeUSD.toFixed(6)} STT`;
+    savingsSourceStr = `${savingsUSD.toFixed(2)} USD (${savingsPct.toFixed(3)}% saved)`;
+  }
 
   const actionName = "Transfer";
   const explorerUrl = `${process.env.BLOCK_EXPLORER_URL || "https://explorer-testnet.somnia.network/tx/"}${txHash}`;
+  
+  const recipientName = getNameFromAddress(recipient);
+  const recipientDisplay = recipientName ? `${recipientName} (\`${recipient}\`)` : `\`${recipient}\``;
 
   let receipt = `✅ *VeloRail — ${actionName} Confirmed*\n\n`;
   receipt += `📋 *Ref:* [${txHash.slice(0, 12)}...](${explorerUrl})\n`;
-  receipt += `💸 *Amount:* ${amount} ${currency}\n`;
-  receipt += `👤 *Recipient:* \`${recipient}\`\n`;
+  
+  if (intent.originalAmount !== undefined && intent.originalAmount !== null) {
+    receipt += `💸 *Amount:* ${intent.originalAmount} ${sourceCurrency} (Settled as ${amount} STT)\n`;
+  } else {
+    receipt += `💸 *Amount:* ${amount} STT\n`;
+  }
+  
+  receipt += `👤 *Recipient:* ${recipientDisplay}\n`;
   if (intent.reference !== null) {
     receipt += `🏷 *Memo:* ${intent.reference}\n`;
   }
 
   receipt += `\n─────────────────────\n`;
-  receipt += `📊 *Fee Analysis*\n`;
-  receipt += `  Traditional wire:  ~$${tradFee.toFixed(2)}\n`;
-  receipt += `  VeloRail (Gas):     $${veloFee.toFixed(6)} STT\n`;
-  receipt += `  💰 *Saved:*          $${savings.toFixed(2)} (${savingsPct.toFixed(3)}% less)\n`;
+  receipt += `📊 *Fee Analysis (${sourceCurrency})*\n`;
+  receipt += `  Traditional bank wire:  ~${tradFeeSourceStr}\n`;
+  receipt += `  VeloRail (Somnia Gas):   ${veloFeeSourceStr}\n`;
+  receipt += `  💰 *Saved:*              ${savingsSourceStr}\n`;
   receipt += `─────────────────────\n`;
 
   receipt += `\n🕐 ${new Date().toUTCString()}\n`;
