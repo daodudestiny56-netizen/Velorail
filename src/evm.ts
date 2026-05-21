@@ -14,6 +14,19 @@ if (privateKey && privateKey !== "YOUR_BOT_PRIVATE_KEY_HERE" && privateKey.trim(
   }
 }
 
+if (!wallet) {
+  console.warn("[VeloRail EVM] No BOT_PRIVATE_KEY configured or failed to initialize. Generating a random demo wallet.");
+  try {
+    const tempWallet = ethers.Wallet.createRandom();
+    const newWallet = new ethers.Wallet(tempWallet.privateKey, provider);
+    wallet = newWallet;
+    console.log(`[VeloRail EVM] Generated Demo Wallet Address: ${newWallet.address}`);
+    console.log(`[VeloRail EVM] Fund this address on Somnia Testnet to run live transactions!`);
+  } catch (err) {
+    console.error("[VeloRail EVM] Failed to generate random wallet:", err);
+  }
+}
+
 /**
  * Validates if a string is a valid EVM address format.
  */
