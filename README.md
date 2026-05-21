@@ -61,6 +61,13 @@ Open the `.env` file and configure the following variables:
 - `OPENAI_API_KEY`: (Optional) OpenAI API Key. If left blank, the bot runs in mock transcription mode for voice notes.
 - `MOCK_TRANSCRIPTION_TEXT`: The fallback text returned during mock transcription tests.
 - `MAX_VOICE_SECONDS`: The maximum duration allowed for incoming voice notes (defaults to 30).
+- `EVM_RPC_URL`: Node RPC URL for Somnia Testnet (`https://api.infra.testnet.somnia.network`).
+- `BOT_PRIVATE_KEY`: Secret key used by the bot to sign and broadcast native STT transactions.
+- `BLOCK_EXPLORER_URL`: Somnia Testnet Explorer transaction prefix (`https://explorer-testnet.somnia.network/tx/`).
+
+> [!WARNING]
+> **Wallet Private Key Security**:
+> The `BOT_PRIVATE_KEY` should be a dedicated testnet bot wallet containing ONLY testnet funds (e.g. Somnia STT Testnet tokens). Never configure this variable with a private key belonging to a wallet containing real mainnet assets.
 
 ---
 
@@ -96,8 +103,19 @@ npm start
 
 ## Fee Comparison Matrix
 
-VeloRail includes a built-in fee simulator to illustrate cost-efficiency relative to traditional settlement models:
-- **Traditional Bank Model**: Flat $35.00 fee plus 0.50% FX margin.
-- **VeloRail Gateway Model**: Flat $0.50 fee plus 0.10% transaction fee.
+VeloRail integrates live gas fees to compare blockchain cost-efficiency relative to traditional settlement models:
+- **Traditional Bank Model**: Flat $35.00 fee plus 0.50% transaction amount.
+- **VeloRail Gateway Model**: The actual transaction gas fee in native STT tokens on Somnia Testnet, estimated on-chain during dry-run.
 
-During settlement, these numbers are generated dynamically and appended to the final markdown receipt.
+During settlement, these numbers are generated dynamically and appended to the final receipt.
+
+---
+
+## Roadmap
+
+The current version of VeloRail is optimized as a lightweight hackathon demo executing native transfers on Somnia Testnet. Future releases will expand on:
+1. **ERC-20 Token Mappings**: Support for stablecoins (USDC, USDT) and utility tokens mapped to their respective contract addresses.
+2. **Multi-Chain Routing**: Integrating cross-chain bridges to route user intents across Polygon, Base, Arbitrum, and Ethereum.
+3. **Developer Fee Routing**: Redirecting protocol fees to a secure multisig developer treasury address automatically.
+4. **Custodial Wallet Services**: Integrating enterprise wallet APIs (e.g., Circle, Fireblocks, Coinbase Developer Platform) to let institutional clients use the interface.
+

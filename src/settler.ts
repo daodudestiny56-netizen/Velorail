@@ -1,11 +1,11 @@
-import crypto from "crypto";
 import { TransactionIntent } from "./types";
+import { sendTransaction } from "./evm";
 
-function buildISO20022(intent: TransactionIntent, txRef: string) {
+function buildISO20022(intent: TransactionIntent, txHash: string) {
   const timestamp = new Date().toISOString();
   const execDate = timestamp.split("T")[0];
   const amountVal = intent.amount !== null ? intent.amount : 0;
-  const currencyVal = intent.currency || "USD";
+  const currencyVal = intent.currency || "STT";
   const recipientVal = intent.recipient || "UNSPECIFIED";
   const referenceVal = intent.reference || "UNSPECIFIED";
 
@@ -16,7 +16,7 @@ function buildISO20022(intent: TransactionIntent, txRef: string) {
       },
       CstmrCdtTrfInitn: {
         GrpHdr: {
-          MsgId: txRef,
+          MsgId: txHash,
           CreDtTm: timestamp,
           NbOfTxs: "1",
           CtrlSum: amountVal.toString(),
@@ -25,7 +25,7 @@ function buildISO20022(intent: TransactionIntent, txRef: string) {
           },
         },
         PmtInf: {
-          PmtInfId: `PI-${txRef}`,
+          PmtInfId: `PI-${txHash.slice(0, 10)}`,
           PmtMtd: "TRF",
           ReqdExctnDt: execDate,
           Dbtr: {
@@ -38,8 +38,8 @@ function buildISO20022(intent: TransactionIntent, txRef: string) {
           },
           CdtTrfTxInf: {
             PmtId: {
-              EndToEndId: txRef,
-              TxId: `TX-${txRef}`,
+              EndToEndId: txHash,
+              TxId: `TX-${txHash.slice(0, 10)}`,
             },
             Amt: {
               InstdAmt: {
@@ -65,51 +65,54 @@ export async function settle(intent: TransactionIntent): Promise<{
   txRef: string;
   iso20022: object;
 }> {
-  // Generate reference: VR-{5 random hex bytes uppercase}-{timestamp base36 uppercase}
-  const randomHex = crypto.randomBytes(5).toString("hex").toUpperCase();
-  const base36Time = Date.now().toString(36).toUpperCase();
-  const txRef = `VR-${randomHex}-${base36Time}`;
+  if (intent.action !== "TRANSFER") {
+    throw new Error(`On-chain settlement is not defined for action: ${intent.action}`);
+  }
+
+  const recipient = intent.recipient;
+  const amount = intent.amount;
+  const currency = intent.currency || "STT";
+
+  if (!recipient || amount === null) {
+    throw new Error("Cannot settle transaction: Missing recipient or amount.");
+  }
+
+  // Execute on-chain transaction
+  const { txHash, gasCostEther } = await sendTransaction(recipient, amount);
 
   // Build ISO 20022 payload block
-  const iso20022 = buildISO20022(intent, txRef);
+  const iso20022 = buildISO20022(intent, txHash);
 
-  const actionName = intent.action === "TRANSFER" ? "Transfer" :
-                     intent.action === "BALANCE_CHECK" ? "Balance Check" :
-                     intent.action === "CONVERSION" ? "Conversion" : "Transaction";
+  // Fee calculation (Traditional vs VeloRail Actual Gas Fee)
+  const tradFee = 35.0 + amount * 0.005;
+  const veloFee = parseFloat(gasCostEther);
+  const savings = tradFee - veloFee;
+  const savingsPct = (savings / tradFee) * 100;
+
+  const actionName = "Transfer";
+  const explorerUrl = `${process.env.BLOCK_EXPLORER_URL || "https://explorer-testnet.somnia.network/tx/"}${txHash}`;
 
   let receipt = `✅ *VeloRail — ${actionName} Confirmed*\n\n`;
-  receipt += `📋 *Ref:* ${txRef}\n`;
-  if (intent.amount !== null) {
-    receipt += `💸 *Amount:* ${intent.amount} ${intent.currency || "USD"}\n`;
-  }
-  if (intent.recipient !== null) {
-    receipt += `👤 *Recipient:* ${intent.recipient}\n`;
-  }
+  receipt += `📋 *Ref:* [${txHash.slice(0, 12)}...](${explorerUrl})\n`;
+  receipt += `💸 *Amount:* ${amount} ${currency}\n`;
+  receipt += `👤 *Recipient:* \`${recipient}\`\n`;
   if (intent.reference !== null) {
     receipt += `🏷 *Memo:* ${intent.reference}\n`;
   }
 
-  if (intent.amount !== null) {
-    const amount = intent.amount;
-    const tradFee = 35.0 + amount * 0.005;
-    const veloFee = 0.5 + amount * 0.001;
-    const savings = tradFee - veloFee;
-    const savingsPct = (savings / tradFee) * 100;
-
-    receipt += `\n─────────────────────\n`;
-    receipt += `📊 *Fee Analysis*\n`;
-    receipt += `  Traditional wire:  ~$${tradFee.toFixed(2)}\n`;
-    receipt += `  VeloRail:           $${veloFee.toFixed(2)}\n`;
-    receipt += `  💰 *Saved:*          $${savings.toFixed(2)} (${savingsPct.toFixed(1)}% less)\n`;
-    receipt += `─────────────────────\n`;
-  }
+  receipt += `\n─────────────────────\n`;
+  receipt += `📊 *Fee Analysis*\n`;
+  receipt += `  Traditional wire:  ~$${tradFee.toFixed(2)}\n`;
+  receipt += `  VeloRail (Gas):     $${veloFee.toFixed(6)} STT\n`;
+  receipt += `  💰 *Saved:*          $${savings.toFixed(2)} (${savingsPct.toFixed(3)}% less)\n`;
+  receipt += `─────────────────────\n`;
 
   receipt += `\n🕐 ${new Date().toUTCString()}\n`;
   receipt += `🔒 ISO 20022 pain.001.001.09`;
 
   return {
     receipt,
-    txRef,
+    txRef: txHash,
     iso20022,
   };
 }

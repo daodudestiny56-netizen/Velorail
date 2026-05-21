@@ -7,6 +7,7 @@ import { parseIntent } from "./intentParser";
 import { transcribeVoice } from "./transcribe";
 import { settle } from "./settler";
 import { TransactionIntent } from "./types";
+import { isValidAddress, getWalletBalance, getBotWalletAddress, estimateTransferGas } from "./evm";
 
 // Startup validation
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,13 +30,16 @@ function buildPreview(intent: TransactionIntent): string {
   let text = "💸 *Transaction Preview*\n\n";
   text += `Type: ${intent.action}\n`;
   if (intent.amount !== null) {
-    text += `Amount: ${intent.amount} ${intent.currency || "USD"}\n`;
+    text += `Amount: ${intent.amount} ${intent.currency || "STT"}\n`;
   }
   if (intent.recipient !== null) {
-    text += `Recipient: ${intent.recipient}\n`;
+    text += `Recipient: \`${intent.recipient}\`\n`;
   }
   if (intent.reference !== null) {
     text += `Memo: ${intent.reference}\n`;
+  }
+  if (intent.estimatedGas) {
+    text += `Estimated Gas Fee: ${intent.estimatedGas} STT\n`;
   }
   text += `\nParsed from: "${intent.raw_input}"\n\n`;
   text += "Confirm this transaction?";
@@ -58,6 +62,33 @@ async function runPipeline(ctx: any, rawText: string) {
     return;
   }
 
+  if (intent.action === "BALANCE_CHECK") {
+    const target = intent.recipient && isValidAddress(intent.recipient) ? intent.recipient : undefined;
+    const balance = await getWalletBalance(target);
+    const addr = target || getBotWalletAddress();
+    await ctx.reply(`📊 *Wallet Balance*\n\nAddress: \`${addr}\`\nBalance: *${balance} STT*`, {
+      parse_mode: "Markdown"
+    });
+    return;
+  }
+
+  if (intent.action === "TRANSFER") {
+    if (!intent.recipient) {
+      throw new Error("Missing recipient address for transfer.");
+    }
+    if (!isValidAddress(intent.recipient)) {
+      throw new Error(`Could not find a valid wallet address for '${intent.recipient}'. Please provide a full 0x address.`);
+    }
+    if (intent.amount === null || intent.amount <= 0) {
+      throw new Error("Missing or invalid amount for transfer. Please specify a numeric amount.");
+    }
+
+    // Dry-run gas estimation to display gas fee and catch revert/insufficient fund issues upfront
+    await ctx.replyWithChatAction("typing");
+    const estimation = await estimateTransferGas(intent.recipient, intent.amount);
+    intent.estimatedGas = estimation.totalFeeEther;
+  }
+
   session.set(userId, intent);
 
   const previewText = buildPreview(intent);
@@ -74,11 +105,10 @@ async function runPipeline(ctx: any, rawText: string) {
 // Command Handlers
 bot.command("start", async (ctx) => {
   await ctx.reply(
-    "Welcome to VeloRail, an intent-driven financial gateway.\n\n" +
+    "Welcome to VeloRail, an intent-driven financial gateway on Somnia Testnet.\n\n" +
     "Send a command like:\n" +
-    "- Transfer 100 USD to Bob\n" +
-    "- Check balance\n" +
-    "- Convert 500 EUR to GBP\n\n" +
+    "- Transfer 0.1 STT to 0x123...\n" +
+    "- Check balance\n\n" +
     "You can also send a short voice message containing your request."
   );
 });
@@ -88,11 +118,25 @@ bot.command("help", async (ctx) => {
     "VeloRail Help:\n" +
     "- /start: Welcome message\n" +
     "- /help: Show help info\n" +
+    "- /balance: Check native STT balance of the bot wallet\n" +
     "- /cancel: Clear any active transaction in progress\n" +
     "- /status: Show system status\n\n" +
-    "Supported Transaction Actions: TRANSFER, BALANCE_CHECK, CONVERSION\n" +
+    "Supported Transaction Actions: TRANSFER, BALANCE_CHECK\n" +
     "Voice note constraints: Maximum 30 seconds, maximum 50KB file size."
   );
+});
+
+bot.command("balance", async (ctx) => {
+  try {
+    await ctx.replyWithChatAction("typing");
+    const balance = await getWalletBalance();
+    await ctx.reply(`📊 *Wallet Balance*\n\nAddress: \`${getBotWalletAddress()}\`\nBalance: *${balance} STT*`, {
+      parse_mode: "Markdown"
+    });
+  } catch (error: any) {
+    console.error(error);
+    await ctx.reply(`Error checking balance: ${error.message || "Failed to query balance."}`);
+  }
 });
 
 bot.command("cancel", async (ctx) => {

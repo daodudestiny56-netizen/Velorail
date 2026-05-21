@@ -7,6 +7,7 @@ export interface TransactionIntent {
   recipient: string | null;
   reference: string | null;
   raw_input: string;
+  estimatedGas?: string | null;
 }
 
 export interface PendingSession {
